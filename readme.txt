@@ -5,7 +5,7 @@ Tags: bulk, variation, attribute, woocommerce
 Requires at least: 5.4
 Tested up to: 6.4
 Requires PHP: 7.1
-Stable tag: 1.1.6
+Stable tag: 1.1.7
 WC requires at least: 4.0
 WC tested up to: 8.2.1
 License: GNU General Public License v3 or later
