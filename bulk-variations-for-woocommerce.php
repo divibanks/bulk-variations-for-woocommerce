@@ -12,8 +12,6 @@
  * License URI: https://www.gnu.org/licenses/gpl-3.0.html
  */
 
-
-
 /**
  * Enqueue main JavaScript to automatically switch and select variations
  */
@@ -22,8 +20,6 @@ function wcbv_enqueue_scripts() {
 }
 
 add_action('wp_enqueue_scripts', 'wcbv_enqueue_scripts');
-
-
 
 /**
  * Get the absolute numeric value of a string as integer or float
@@ -35,8 +31,6 @@ function wcbv_get_numeric($val) {
 
     return 0;
 }
-
-
 
 /**
  * Create a product variation for a defined variable product ID.
@@ -55,30 +49,20 @@ function wcbv_create_product_variation($product_id, $variation_data) {
     // Get pricing adjustment
     $ppa = $variation_data['pricing_adjustment'];
 
-    $variation_post = [
-        'post_title' => $product->get_name(),
-        'post_name' => 'product-' . $product_id . '-variation',
-        'post_status' => 'publish',
-        'post_parent' => $product_id,
-        'post_type' => 'product_variation',
-        'guid' => $product->get_permalink(),
+    $variation_data = [
+        'attributes' => $variation_data['attributes'],
+        'sku' => isset($variation_data['sku']) ? $variation_data['sku'] : '',
     ];
 
-    // $defaultStock = $product->get_stock_quantity(); // sometimes this doesn't work
-    $defaultStock = get_post_meta($product_id, '_stock', true);
-    $defaultPrice = $product->get_price();
-
-    // Creating the product variation
-    $variation_id = wp_insert_post($variation_post);
-
-    // Get an instance of the WC_Product_Variation object
-    $variation = new WC_Product_Variation($variation_id);
+    $variation = new WC_Product_Variation();
+    $variation->set_parent_id($product_id);
+    $variation->set_props($variation_data);
 
     // Iterating through the variations attributes
     foreach ($variation_data['attributes'] as $attribute => $term_name) {
         $taxonomy = 'pa_' . $attribute; // The attribute taxonomy
 
-        // If taxonomy doesn't exists we create it
+        // If taxonomy doesn't exist, create it
         if (!taxonomy_exists($taxonomy)) {
             register_taxonomy($taxonomy, 'product_variation', [
                 'hierarchical' => false,
@@ -88,7 +72,7 @@ function wcbv_create_product_variation($product_id, $variation_data) {
             ]);
         }
 
-        // Check if the Term name exist and if not we create it
+        // Check if the Term name exists, and if not, create it
         if (!term_exists($term_name, $taxonomy)) {
             wp_insert_term($term_name, $taxonomy);
         }
@@ -96,41 +80,38 @@ function wcbv_create_product_variation($product_id, $variation_data) {
         $term_slug = get_term_by('name', $term_name, $taxonomy)->slug; // Get the term slug
 
         // Get the post Terms names from the parent variable product
-        $post_term_names =  wp_get_post_terms($product_id, $taxonomy, ['fields' => 'names']);
+        $post_term_names = wp_get_post_terms($product_id, $taxonomy, ['fields' => 'names']);
 
-        // Check if the post term exist and if not we set it in the parent variable product
+        // Check if the post term exists, and if not, set it in the parent variable product
         if (!in_array($term_name, $post_term_names)) {
             wp_set_post_terms($product_id, $term_name, $taxonomy, true);
         }
 
         // Set/save the attribute data in the product variation
-        update_post_meta($variation_id, 'attribute_'.$taxonomy, $term_slug);
+        $variation->set_attribute($taxonomy, $term_slug);
     }
 
     // Set/save all other data
-
-    if (!empty($variation_data['sku'])) {
-        $variation->set_sku($variation_data['sku']);
-    }
-
     $product->set_manage_stock(true);
 
     if (is_numeric($ppa)) {
-        $defaultPrice *= (1 + wcbv_get_numeric($ppa) / 100);
+        $defaultPrice = $product->get_price() * (1 + wcbv_get_numeric($ppa) / 100);
+    } else {
+        $defaultPrice = $product->get_price();
     }
+
     $variation->set_price($defaultPrice);
     $variation->set_regular_price($defaultPrice);
-
     $variation->set_manage_stock(true);
-    $variation->set_stock_quantity($defaultStock);
+    $variation->set_stock_quantity($product->get_stock_quantity());
 
-    $variation->save(); // Save the data
+    $variation_id = $variation->save(); // Save the data
+
+    return $variation_id;
 }
 
-
-
 function wcbv_menu_links() {
-    add_submenu_page('woocommerce', 'Bulk Variations', 'Bulk Variations', 'manage_options', 'wcbv', 'wcbv_build_admin_page'); 
+    add_submenu_page('woocommerce', 'Bulk Variations', 'Bulk Variations', 'manage_options', 'wcbv', 'wcbv_build_admin_page');
 }
 
 add_action('admin_menu', 'wcbv_menu_links');
@@ -174,7 +155,11 @@ function wcbv_build_admin_page() {
 
                 if ($loop->have_posts()) {
                     while ($loop->have_posts()) : $loop->the_post();
-                        wcbv_create_product_variation(get_the_ID(), $variation_data);
+                        $product_id = get_the_ID();
+                        $product = wc_get_product($product_id);
+                        if ($product && $product->is_type('variable')) {
+                            wcbv_create_product_variation($product_id, $variation_data);
+                        }
                     endwhile;
                 }
 
@@ -227,10 +212,8 @@ function wcbv_build_admin_page() {
             <p>&copy;<?php echo date('Y'); ?> <a href="https://getbutterfly.com/" rel="external"><strong>getButterfly</strong>.com</a> &middot; <small>Code wrangling since 2005</small></p>
         <?php } ?>
     </div>
-	<?php
+    <?php
 }
-
-
 
 function wcbv_variation_landing($atts) {
     $attributes = shortcode_atts([
@@ -255,8 +238,6 @@ function wcbv_variation_landing($atts) {
 }
 
 add_shortcode('variations', 'wcbv_variation_landing');
-
-
 
 function wcbv_cookie_redirect() {
     if (isset($_GET['v'])) {
